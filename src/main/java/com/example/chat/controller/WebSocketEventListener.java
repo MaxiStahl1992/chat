@@ -1,35 +1,46 @@
 package com.example.chat.controller;
 
+import com.example.chat.enums.MessageType;
 import com.example.chat.model.ChatMessage;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.messaging.handler.annotation.MessageMapping;
-import org.springframework.messaging.handler.annotation.Payload;
-import org.springframework.messaging.handler.annotation.SendTo;
-import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
+import org.springframework.context.event.EventListener;
 import org.springframework.messaging.simp.SimpMessageSendingOperations;
-import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
+import org.springframework.stereotype.Component;
+import org.springframework.web.socket.messaging.SessionConnectedEvent;
+import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 
+@Slf4j
+@Component
 public class WebSocketEventListener {
 
     @Autowired
     private SimpMessageSendingOperations messagingTemplate;
 
-    @MessageMapping("/chat.sendMessage/{id}/")
-    @SendTo("/topic/public/{id}") // localhost:8080/topic/public
-    public ChatMessage sendMessage(@Payload ChatMessage chatMessage, @PathVariable Long id) {
-        // ChatRoom chatroom = chatRoomRepository.findById();
-
-        messagingTemplate.convertAndSend("/topic/public/{id}", chatMessage);
-
-        return chatMessage;
+    @EventListener
+    public void handleWebSocketConnectListener(SessionConnectedEvent event) {
+        log.info("Received a new web socket connection");
     }
 
-    @MessageMapping("/chat.addUser")
-    @SendTo("/topic/public")
-    public ChatMessage addUser(@Payload ChatMessage chatMessage,
-                               SimpMessageHeaderAccessor headerAccessor) {
-        // Add username in web socket session
-        headerAccessor.getSessionAttributes().put("username", chatMessage.getSender());
-        return chatMessage;
+    @EventListener
+    public void test(SessionDisconnectEvent event) {
+        log.info("Closed socket connection");
+    }
+
+    @EventListener
+    public void handleWebSocketDisconnectListener(SessionDisconnectEvent event) {
+        StompHeaderAccessor headerAccessor = StompHeaderAccessor.wrap(event.getMessage());
+
+        String username = (String) headerAccessor.getSessionAttributes().get("username");
+        if(username != null) {
+            log.info("User Disconnected : " + username);
+
+            ChatMessage chatMessage = new ChatMessage();
+            chatMessage.setType(MessageType.LEAVE);
+            chatMessage.setSender(username);
+
+            messagingTemplate.convertAndSend("/topic/public", chatMessage);
+        }
     }
 }
